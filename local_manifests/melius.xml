@@ -5,8 +5,8 @@
 
   <!-- Device and kernel: forks of sileshn's lineage-18.1 trees, branch lineage-21, pinned to the b11 build -->
   <project name="android_device_samsung_meliusltexx" path="device/samsung/meliusltexx" remote="melius" revision="8477394e4be0221f6e7a28257b4d5089d8d3ae5f" upstream="lineage-21" />
-  <project name="android_device_samsung_melius-common" path="device/samsung/melius-common" remote="melius" revision="c56d33373187cb8b7a80fe5f9d2c45df59ddf754" upstream="lineage-21" />
-  <project name="android_device_samsung_msm8930-common" path="device/samsung/msm8930-common" remote="melius" revision="0b45ae8301e0fc3ce6b1e32ec1e6c9f42211c9c4" upstream="lineage-21" />
+  <project name="android_device_samsung_melius-common" path="device/samsung/melius-common" remote="melius" revision="d2936246d3f0a00fd94dd394c9a975a95bf2c892" upstream="lineage-21" />
+  <project name="android_device_samsung_msm8930-common" path="device/samsung/msm8930-common" remote="melius" revision="8f702e53d9cc7ce5c5408bca696d5a191d6abb5a" upstream="lineage-21" />
   <project name="android_kernel_samsung_msm8930-common" path="kernel/samsung/msm8930-common" remote="melius" revision="3c8a2b4c943b51680f6a469634f4ba0377ce97d8" upstream="lineage-21" />
 
   <!-- Proprietary blobs: sileshn's repo, unmodified -->

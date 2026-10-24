@@ -357,9 +357,9 @@
   <project name="LineageOS/mirror" path="lineage/mirror" revision="f6b6b83895a6ef516d44cd18ca5def663d748194" upstream="main" dest-branch="main" groups="infra"/>
   <project name="LineageOS/scripts" path="lineage/scripts" revision="c00c7f2435ffa2f3ec8147f0719ea97ea11d5c1b" upstream="main" dest-branch="main" groups="tools"/>
   <project name="LineageOS/www" path="lineage/website" revision="ca73ca067d4277d1b2cf36f4af387bb7d795b70c" upstream="main" dest-branch="main" groups="infra"/>
-  <project name="android_device_samsung_melius-common" path="device/samsung/melius-common" remote="melius" revision="c56d33373187cb8b7a80fe5f9d2c45df59ddf754" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
+  <project name="android_device_samsung_melius-common" path="device/samsung/melius-common" remote="melius" revision="d2936246d3f0a00fd94dd394c9a975a95bf2c892" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
   <project name="android_device_samsung_meliusltexx" path="device/samsung/meliusltexx" remote="melius" revision="8477394e4be0221f6e7a28257b4d5089d8d3ae5f" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
-  <project name="android_device_samsung_msm8930-common" path="device/samsung/msm8930-common" remote="melius" revision="0b45ae8301e0fc3ce6b1e32ec1e6c9f42211c9c4" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
+  <project name="android_device_samsung_msm8930-common" path="device/samsung/msm8930-common" remote="melius" revision="8f702e53d9cc7ce5c5408bca696d5a191d6abb5a" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
   <project name="android_kernel_samsung_msm8930-common" path="kernel/samsung/msm8930-common" remote="melius" revision="3c8a2b4c943b51680f6a469634f4ba0377ce97d8" upstream="lineage-21" dest-branch="lineage-21" groups="local::melius"/>
   <project name="device/common" remote="aosp" revision="bb1fa9edb22f1c9bf28f07f3d23c20789e61c14c" upstream="refs/tags/android-14.0.0_r67" dest-branch="refs/tags/android-14.0.0_r67" groups="pdk,pdk-cw-fs"/>
   <project name="device/generic/arm64" remote="aosp" revision="71380158d818de918338e34a9cb72316fe3cfa4e" upstream="refs/tags/android-14.0.0_r67" dest-branch="refs/tags/android-14.0.0_r67" groups="pdk"/>
