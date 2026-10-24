@@ -40,5 +40,6 @@ own has your keys, so its checksum and certificate differ.
 
 ## Licences
 
-Patches keep the licence of the project they apply to (mostly Apache 2.0). The kernel is GPL-2.0.
+`apply.sh`, the manifests and this README are licensed under the Apache License 2.0 ([LICENSE](LICENSE)).
+Each patch keeps the licence of the project it applies to (mostly Apache 2.0); the kernel is GPL-2.0.
 Proprietary Samsung and Qualcomm blobs are not in this repo.

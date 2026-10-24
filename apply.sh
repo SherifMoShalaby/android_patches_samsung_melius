@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Apply the platform patches to a LineageOS-UL 21.0 tree. Run from the tree root after `repo sync`.
 # Checks every project first and changes nothing unless all are at the commit their patches were made on.
 set -euo pipefail
