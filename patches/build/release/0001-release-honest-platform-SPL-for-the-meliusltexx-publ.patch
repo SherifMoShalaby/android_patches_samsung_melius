@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Fri, 23 Oct 2026 17:23:07 +0300
+Subject: [PATCH] release: honest platform SPL for the meliusltexx public build
+
+
+frameworks/base is frozen at the UL 2025-04-04 state plus selected backports, so
+2026-10-01 overstated the coverage.
+
+Change-Id: I4ea2b5cd52a5c2cf65fed99e8c400984da7c54d3
+---
+ build_config/ap2a.scl                                      | 2 +-
+ flag_values/ap2a/RELEASE_PLATFORM_SECURITY_PATCH.textproto | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/build_config/ap2a.scl b/build_config/ap2a.scl
+index 22c4c8c..624761f 100644
+--- a/build_config/ap2a.scl
++++ b/build_config/ap2a.scl
+@@ -35,7 +35,7 @@ values = [
+     value("RELEASE_DEPRECATE_VNDK", True),
+     value("RELEASE_PLATFORM_SDK_EXTENSION_VERSION", "11"),
+     value("RELEASE_PLATFORM_SDK_VERSION", "34"),
+-    value("RELEASE_PLATFORM_SECURITY_PATCH", "2026-10-01"),
++    value("RELEASE_PLATFORM_SECURITY_PATCH", "2025-04-05"),
+     value("RELEASE_PLATFORM_VERSION", "AP2A"),
+     value("RELEASE_PLATFORM_VERSION_ALL_CODENAMES", "REL"),
+     value("RELEASE_PLATFORM_VERSION_ALL_PREVIEW_CODENAMES", "REL,VanillaIceCream"),
+diff --git a/flag_values/ap2a/RELEASE_PLATFORM_SECURITY_PATCH.textproto b/flag_values/ap2a/RELEASE_PLATFORM_SECURITY_PATCH.textproto
+index 82a0fee..b13a49d 100644
+--- a/flag_values/ap2a/RELEASE_PLATFORM_SECURITY_PATCH.textproto
++++ b/flag_values/ap2a/RELEASE_PLATFORM_SECURITY_PATCH.textproto
+@@ -1,4 +1,4 @@
+ name: "RELEASE_PLATFORM_SECURITY_PATCH"
+ value: {
+-  string_value: "2026-10-01"
++  string_value: "2025-04-05"
+ }

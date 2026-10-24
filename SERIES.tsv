@@ -1,0 +1,17 @@
+# path	upstream base commit	patches
+bionic	eae9b76f8bb4752cdd4faada596aa5b06237051d	1
+build/release	41065872a750ec8eaac99c122a2b39a5992f8e29	1
+build/soong	8898efea72b5828c07175f3ee9484ec3dbe0fe6b	1
+external/dng_sdk	7267ecc2bc120ad9ef9c4cb0da3ce8016a97d547	1
+frameworks/av	d5dc9bb5a7e71bcd52637248c1b375887749332a	5
+frameworks/base	aca8bb27401d94ac4521043e13f414e19f51bd3c	9
+lineage-sdk	c93654f8c98f5a18a2a3ca562d4fc51eac03143f	1
+packages/apps/Camera2	d8b5759d205400bb2d4e36c05482ceae0afbc033	2
+packages/apps/Settings	ff82ae7605fea833fe347424e82cd848f042fce7	1
+packages/apps/Trebuchet	fd2e5694d077d32bf9b092589a8ed335bc83bf92	1
+packages/modules/Bluetooth	ff7375e0a7789f9a9049122199ad70d4621aea7c	2
+packages/modules/IntentResolver	dddee4f69af488d667fc138553e74cb5088a0c3c	1
+packages/services/Mms	ab9989936d5aa8f848cbacfa4827a3324480d436	2
+system/core	cf103cae1bd46f6be19d1e407a6ea55baa38cb83	1
+system/libhidl	a9539e8a12ee0b9b23d222219084915322b87075	1
+vendor/lineage	2fed97c50c004e78c1691bdf3620ac2dcb21a711	1

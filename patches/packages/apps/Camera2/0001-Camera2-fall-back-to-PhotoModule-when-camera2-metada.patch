@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 16:17:45 +0300
+Subject: [PATCH 1/2] Camera2: fall back to PhotoModule when camera2 metadata
+ is unavailable
+
+HALv1 devices expose no camera2 characteristics, so CaptureModule cannot
+start. Probe getCameraCharacteristics for every id and use the camera1
+PhotoModule if any of them fails.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I9346419dd857f4007b62a9690ecf041ef4e2956a
+---
+ src/com/android/camera/CameraActivity.java      |  2 +-
+ .../config/OneCameraFeatureConfigCreator.java   | 17 ++++++++++++++---
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/src/com/android/camera/CameraActivity.java b/src/com/android/camera/CameraActivity.java
+index 3093b25..72074f4 100644
+--- a/src/com/android/camera/CameraActivity.java
++++ b/src/com/android/camera/CameraActivity.java
+@@ -1407,7 +1407,7 @@ public class CameraActivity extends QuickActivity
+         mOrientationManager = new OrientationManagerImpl(this, mMainHandler);
+         mSettingsManager = getServices().getSettingsManager();
+         mSoundPlayer = new SoundPlayer(mAppContext);
+-        mFeatureConfig = OneCameraFeatureConfigCreator.createDefault(getContentResolver(),
++        mFeatureConfig = OneCameraFeatureConfigCreator.createDefault(this, getContentResolver(),
+                 getServices().getMemoryManager());
+         mFatalErrorHandler = new FatalErrorHandlerImpl(this);
+         checkPermissions();
+diff --git a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+index dc7f900..4f75554 100644
+--- a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
++++ b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+@@ -17,6 +17,8 @@
+ package com.android.camera.one.config;
+ 
+ import android.content.ContentResolver;
++import android.content.Context;
++import android.hardware.camera2.CameraManager;
+ import android.hardware.camera2.CameraCharacteristics;
+ 
+ import com.android.camera.app.MemoryManager;
+@@ -38,10 +40,19 @@ public class OneCameraFeatureConfigCreator {
+     /**
+      * Create the default camera feature config.
+      */
+-    public static OneCameraFeatureConfig createDefault(ContentResolver contentResolver,
+-            MemoryManager memoryManager) {
+-        // Enable CaptureModule on all M devices.
++    public static OneCameraFeatureConfig createDefault(Context context,
++            ContentResolver contentResolver, MemoryManager memoryManager) {
++        // Enable CaptureModule on all M devices, unless camera2 metadata is unavailable
++        // (HALv1 devices): fall back to the camera1 PhotoModule.
+         boolean useCaptureModule = true;
++        try {
++            CameraManager cameraManager = context.getSystemService(CameraManager.class);
++            for (String id : cameraManager.getCameraIdList()) {
++                cameraManager.getCameraCharacteristics(id);
++            }
++        } catch (Exception e) {
++            useCaptureModule = false;
++        }
+         Log.i(TAG, "CaptureModule? " + useCaptureModule);
+ 
+         // HDR+ has multiple levels of support.

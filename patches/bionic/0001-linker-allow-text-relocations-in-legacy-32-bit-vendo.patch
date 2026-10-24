@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 15:25:39 +0300
+Subject: [PATCH] linker: allow text relocations in legacy 32-bit vendor blobs
+
+msm8930 camera blobs (libmmjpeg.so) still carry text relocations. Load them with
+a warning when they live under /vendor or /system/vendor; enforcement for
+everything else is unchanged.
+---
+ linker/linker.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/linker/linker.cpp b/linker/linker.cpp
+index 8081ee0..399d05c 100644
+--- a/linker/linker.cpp
++++ b/linker/linker.cpp
+@@ -3423,7 +3423,12 @@ bool soinfo::link_image(const SymbolLookupList& lookup_list, soinfo* local_group
+   if (has_text_relocations) {
+     // Fail if app is targeting M or above.
+     int app_target_api_level = get_application_target_sdk_version();
+-    if (app_target_api_level >= 23) {
++    // Legacy 32-bit vendor blobs (e.g. msm8930 libmmjpeg.so) still carry text relocations;
++    // let them load, keep enforcement for everything else.
++    const char* so_path = get_realpath();
++    const bool legacy_vendor_blob = strncmp(so_path, "/vendor/", 8) == 0 ||
++                                    strncmp(so_path, "/system/vendor/", 15) == 0;
++    if (app_target_api_level >= 23 && !legacy_vendor_blob) {
+       DL_ERR_AND_LOG("\"%s\" has text relocations (%s#Text-Relocations-Enforced-for-API-level-23)",
+                      get_realpath(), kBionicChangesUrl);
+       return false;

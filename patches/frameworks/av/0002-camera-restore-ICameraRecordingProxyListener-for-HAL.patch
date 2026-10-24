@@ -1,0 +1,677 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 17:40:44 +0300
+Subject: [PATCH 2/5] camera: restore ICameraRecordingProxyListener for HALv1
+ video
+
+Android 14 dropped the recording-proxy listener and the release-frame calls,
+leaving only the BUFFER_QUEUE video path, which HALv1 cameras cannot do.
+Bring back the Android 13 ICameraRecordingProxy{,Listener} and the Camera
+forwarding so CameraSource can receive data-callback frames again.
+connectLegacy stays out.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ camera/Android.bp                             |   1 +
+ camera/Camera.cpp                             |  69 ++++++-
+ camera/ICameraRecordingProxy.cpp              |  94 ++++++++-
+ camera/ICameraRecordingProxyListener.cpp      | 180 ++++++++++++++++++
+ camera/include/camera/Camera.h                |  10 +-
+ camera/include/camera/ICameraRecordingProxy.h |  40 ++--
+ .../camera/ICameraRecordingProxyListener.h    |  61 ++++++
+ 7 files changed, 436 insertions(+), 19 deletions(-)
+ create mode 100644 camera/ICameraRecordingProxyListener.cpp
+ create mode 100644 camera/include/camera/ICameraRecordingProxyListener.h
+
+diff --git a/camera/Android.bp b/camera/Android.bp
+index 8f732d0..75815d4 100644
+--- a/camera/Android.bp
++++ b/camera/Android.bp
+@@ -94,6 +94,7 @@ cc_library {
+         "ICamera.cpp",
+         "ICameraClient.cpp",
+         "ICameraRecordingProxy.cpp",
++        "ICameraRecordingProxyListener.cpp",
+         "camera2/CaptureRequest.cpp",
+         "camera2/ConcurrentCamera.cpp",
+         "camera2/OutputConfiguration.cpp",
+diff --git a/camera/Camera.cpp b/camera/Camera.cpp
+index 6b040ab..e381fa5 100644
+--- a/camera/Camera.cpp
++++ b/camera/Camera.cpp
+@@ -157,6 +157,10 @@ void Camera::stopPreview()
+ void Camera::stopRecording()
+ {
+     ALOGV("stopRecording");
++    {
++        Mutex::Autolock _l(mLock);
++        mRecordingProxyListener.clear();
++    }
+     sp <::android::hardware::ICamera> c = mCamera;
+     if (c == 0) return;
+     c->stopRecording();
+@@ -317,6 +321,19 @@ void Camera::dataCallback(int32_t msgType, const sp<IMemory>& dataPtr,
+ // callback from camera service when timestamped frame is ready
+ void Camera::dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& dataPtr)
+ {
++    // If recording proxy listener is registered, forward the frame and return.
++    // The other listener (mListener) is ignored because the receiver needs to
++    // call releaseRecordingFrame.
++    sp<ICameraRecordingProxyListener> proxylistener;
++    {
++        Mutex::Autolock _l(mLock);
++        proxylistener = mRecordingProxyListener;
++    }
++    if (proxylistener != NULL) {
++        proxylistener->dataCallbackTimestamp(timestamp, msgType, dataPtr);
++        return;
++    }
++
+     sp<CameraListener> listener;
+     {
+         Mutex::Autolock _l(mLock);
+@@ -333,6 +350,19 @@ void Camera::dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType, const sp<
+ 
+ void Camera::recordingFrameHandleCallbackTimestamp(nsecs_t timestamp, native_handle_t* handle)
+ {
++    // If recording proxy listener is registered, forward the frame and return.
++    // The other listener (mListener) is ignored because the receiver needs to
++    // call releaseRecordingFrameHandle.
++    sp<ICameraRecordingProxyListener> proxylistener;
++    {
++        Mutex::Autolock _l(mLock);
++        proxylistener = mRecordingProxyListener;
++    }
++    if (proxylistener != NULL) {
++        proxylistener->recordingFrameHandleCallbackTimestamp(timestamp, handle);
++        return;
++    }
++
+     sp<CameraListener> listener;
+     {
+         Mutex::Autolock _l(mLock);
+@@ -351,6 +381,19 @@ void Camera::recordingFrameHandleCallbackTimestampBatch(
+         const std::vector<nsecs_t>& timestamps,
+         const std::vector<native_handle_t*>& handles)
+ {
++    // If recording proxy listener is registered, forward the frame and return.
++    // The other listener (mListener) is ignored because the receiver needs to
++    // call releaseRecordingFrameHandle.
++    sp<ICameraRecordingProxyListener> proxylistener;
++    {
++        Mutex::Autolock _l(mLock);
++        proxylistener = mRecordingProxyListener;
++    }
++    if (proxylistener != NULL) {
++        proxylistener->recordingFrameHandleCallbackTimestampBatch(timestamps, handles);
++        return;
++    }
++
+     sp<CameraListener> listener;
+     {
+         Mutex::Autolock _l(mLock);
+@@ -370,9 +413,16 @@ sp<ICameraRecordingProxy> Camera::getRecordingProxy() {
+     return new RecordingProxy(this);
+ }
+ 
+-status_t Camera::RecordingProxy::startRecording()
++void Camera::setRecordingProxyListener(const sp<ICameraRecordingProxyListener>& listener)
++{
++    Mutex::Autolock _l(mLock);
++    mRecordingProxyListener = listener;
++}
++
++status_t Camera::RecordingProxy::startRecording(const sp<ICameraRecordingProxyListener>& listener)
+ {
+     ALOGV("RecordingProxy::startRecording");
++    mCamera->setRecordingProxyListener(listener);
+     mCamera->reconnect();
+     return mCamera->startRecording();
+ }
+@@ -383,6 +433,23 @@ void Camera::RecordingProxy::stopRecording()
+     mCamera->stopRecording();
+ }
+ 
++void Camera::RecordingProxy::releaseRecordingFrame(const sp<IMemory>& mem)
++{
++    ALOGV("RecordingProxy::releaseRecordingFrame");
++    mCamera->releaseRecordingFrame(mem);
++}
++
++void Camera::RecordingProxy::releaseRecordingFrameHandle(native_handle_t* handle) {
++    ALOGV("RecordingProxy::releaseRecordingFrameHandle");
++    mCamera->releaseRecordingFrameHandle(handle);
++}
++
++void Camera::RecordingProxy::releaseRecordingFrameHandleBatch(
++        const std::vector<native_handle_t*>& handles) {
++    ALOGV("RecordingProxy::releaseRecordingFrameHandleBatch");
++    mCamera->releaseRecordingFrameHandleBatch(handles);
++}
++
+ Camera::RecordingProxy::RecordingProxy(const sp<Camera>& camera)
+ {
+     mCamera = camera;
+diff --git a/camera/ICameraRecordingProxy.cpp b/camera/ICameraRecordingProxy.cpp
+index 97523a5..bd6af75 100644
+--- a/camera/ICameraRecordingProxy.cpp
++++ b/camera/ICameraRecordingProxy.cpp
+@@ -18,6 +18,7 @@
+ #define LOG_TAG "ICameraRecordingProxy"
+ #include <camera/CameraUtils.h>
+ #include <camera/ICameraRecordingProxy.h>
++#include <camera/ICameraRecordingProxyListener.h>
+ #include <binder/IMemory.h>
+ #include <binder/Parcel.h>
+ #include <media/hardware/HardwareAPI.h>
+@@ -28,7 +29,10 @@ namespace android {
+ 
+ enum {
+     START_RECORDING = IBinder::FIRST_CALL_TRANSACTION,
+-    STOP_RECORDING
++    STOP_RECORDING,
++    RELEASE_RECORDING_FRAME,
++    RELEASE_RECORDING_FRAME_HANDLE,
++    RELEASE_RECORDING_FRAME_HANDLE_BATCH,
+ };
+ 
+ 
+@@ -40,11 +44,12 @@ public:
+     {
+     }
+ 
+-    status_t startRecording()
++    status_t startRecording(const sp<ICameraRecordingProxyListener>& listener)
+     {
+         ALOGV("startRecording");
+         Parcel data, reply;
+         data.writeInterfaceToken(ICameraRecordingProxy::getInterfaceDescriptor());
++        data.writeStrongBinder(IInterface::asBinder(listener));
+         remote()->transact(START_RECORDING, data, &reply);
+         return reply.readInt32();
+     }
+@@ -56,6 +61,46 @@ public:
+         data.writeInterfaceToken(ICameraRecordingProxy::getInterfaceDescriptor());
+         remote()->transact(STOP_RECORDING, data, &reply);
+     }
++
++    void releaseRecordingFrame(const sp<IMemory>& mem)
++    {
++        ALOGV("releaseRecordingFrame");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxy::getInterfaceDescriptor());
++        data.writeStrongBinder(IInterface::asBinder(mem));
++        remote()->transact(RELEASE_RECORDING_FRAME, data, &reply);
++    }
++
++    void releaseRecordingFrameHandle(native_handle_t *handle) {
++        ALOGV("releaseRecordingFrameHandle");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxy::getInterfaceDescriptor());
++        data.writeNativeHandle(handle);
++
++        remote()->transact(RELEASE_RECORDING_FRAME_HANDLE, data, &reply);
++
++        // Close the native handle because camera received a dup copy.
++        native_handle_close(handle);
++        native_handle_delete(handle);
++    }
++
++    void releaseRecordingFrameHandleBatch(const std::vector<native_handle_t*>& handles) {
++        ALOGV("releaseRecordingFrameHandleBatch");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxy::getInterfaceDescriptor());
++        uint32_t n = handles.size();
++        data.writeUint32(n);
++        for (auto& handle : handles) {
++            data.writeNativeHandle(handle);
++        }
++        remote()->transact(RELEASE_RECORDING_FRAME_HANDLE_BATCH, data, &reply);
++
++        // Close the native handle because camera received a dup copy.
++        for (auto& handle : handles) {
++            native_handle_close(handle);
++            native_handle_delete(handle);
++        }
++    }
+ };
+ 
+ IMPLEMENT_META_INTERFACE(CameraRecordingProxy, "android.hardware.ICameraRecordingProxy");
+@@ -69,7 +114,9 @@ status_t BnCameraRecordingProxy::onTransact(
+         case START_RECORDING: {
+             ALOGV("START_RECORDING");
+             CHECK_INTERFACE(ICameraRecordingProxy, data, reply);
+-            reply->writeInt32(startRecording());
++            sp<ICameraRecordingProxyListener> listener =
++                interface_cast<ICameraRecordingProxyListener>(data.readStrongBinder());
++            reply->writeInt32(startRecording(listener));
+             return NO_ERROR;
+         } break;
+         case STOP_RECORDING: {
+@@ -78,6 +125,46 @@ status_t BnCameraRecordingProxy::onTransact(
+             stopRecording();
+             return NO_ERROR;
+         } break;
++        case RELEASE_RECORDING_FRAME: {
++            ALOGV("RELEASE_RECORDING_FRAME");
++            CHECK_INTERFACE(ICameraRecordingProxy, data, reply);
++            sp<IMemory> mem = interface_cast<IMemory>(data.readStrongBinder());
++            releaseRecordingFrame(mem);
++            return NO_ERROR;
++        } break;
++        case RELEASE_RECORDING_FRAME_HANDLE: {
++            ALOGV("RELEASE_RECORDING_FRAME_HANDLE");
++            CHECK_INTERFACE(ICameraRecordingProxy, data, reply);
++
++            // releaseRecordingFrameHandle will be responsble to close the native handle.
++            releaseRecordingFrameHandle(data.readNativeHandle());
++            return NO_ERROR;
++        } break;
++        case RELEASE_RECORDING_FRAME_HANDLE_BATCH: {
++            ALOGV("RELEASE_RECORDING_FRAME_HANDLE_BATCH");
++            CHECK_INTERFACE(ICameraRecordingProxy, data, reply);
++            uint32_t n = 0;
++            status_t res = data.readUint32(&n);
++            if (res != OK) {
++                ALOGE("%s: Failed to read batch size: %s (%d)", __FUNCTION__, strerror(-res), res);
++                return BAD_VALUE;
++            }
++            std::vector<native_handle_t*> handles;
++            handles.reserve(n);
++            for (uint32_t i = 0; i < n; i++) {
++                native_handle_t* handle = data.readNativeHandle();
++                if (handle == nullptr) {
++                    ALOGE("%s: Received a null native handle at handles[%d]",
++                            __FUNCTION__, i);
++                    return BAD_VALUE;
++                }
++                handles.push_back(handle);
++            }
++
++            // releaseRecordingFrameHandleBatch will be responsble to close the native handle.
++            releaseRecordingFrameHandleBatch(handles);
++            return NO_ERROR;
++        } break;
+         default:
+             return BBinder::onTransact(code, data, reply, flags);
+     }
+@@ -86,3 +173,4 @@ status_t BnCameraRecordingProxy::onTransact(
+ // ----------------------------------------------------------------------------
+ 
+ }; // namespace android
++
+diff --git a/camera/ICameraRecordingProxyListener.cpp b/camera/ICameraRecordingProxyListener.cpp
+new file mode 100644
+index 0000000..66faf8f
+--- /dev/null
++++ b/camera/ICameraRecordingProxyListener.cpp
+@@ -0,0 +1,180 @@
++/*
++ * Copyright (C) 2011 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++//#define LOG_NDEBUG 0
++#define LOG_TAG "ICameraRecordingProxyListener"
++#include <camera/CameraUtils.h>
++#include <camera/ICameraRecordingProxyListener.h>
++#include <binder/IMemory.h>
++#include <binder/Parcel.h>
++#include <media/hardware/HardwareAPI.h>
++#include <utils/Log.h>
++
++namespace android {
++
++enum {
++    DATA_CALLBACK_TIMESTAMP = IBinder::FIRST_CALL_TRANSACTION,
++    RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP,
++    RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP_BATCH
++};
++
++class BpCameraRecordingProxyListener: public BpInterface<ICameraRecordingProxyListener>
++{
++public:
++    explicit BpCameraRecordingProxyListener(const sp<IBinder>& impl)
++        : BpInterface<ICameraRecordingProxyListener>(impl)
++    {
++    }
++
++    void dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& imageData)
++    {
++        ALOGV("dataCallback");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxyListener::getInterfaceDescriptor());
++        data.writeInt64(timestamp);
++        data.writeInt32(msgType);
++        data.writeStrongBinder(IInterface::asBinder(imageData));
++        remote()->transact(DATA_CALLBACK_TIMESTAMP, data, &reply, IBinder::FLAG_ONEWAY);
++    }
++
++    void recordingFrameHandleCallbackTimestamp(nsecs_t timestamp, native_handle_t* handle) {
++        ALOGV("recordingFrameHandleCallbackTimestamp");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxyListener::getInterfaceDescriptor());
++        data.writeInt64(timestamp);
++        data.writeNativeHandle(handle);
++        remote()->transact(RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP, data, &reply,
++                IBinder::FLAG_ONEWAY);
++
++        // The native handle is dupped in ICameraClient so we need to free it here.
++        native_handle_close(handle);
++        native_handle_delete(handle);
++    }
++
++    void recordingFrameHandleCallbackTimestampBatch(
++            const std::vector<nsecs_t>& timestamps,
++            const std::vector<native_handle_t*>& handles) {
++        ALOGV("recordingFrameHandleCallbackTimestampBatch");
++        Parcel data, reply;
++        data.writeInterfaceToken(ICameraRecordingProxyListener::getInterfaceDescriptor());
++
++        uint32_t n = timestamps.size();
++        if (n != handles.size()) {
++            ALOGE("%s: size of timestamps(%zu) and handles(%zu) mismatch!",
++                    __FUNCTION__, timestamps.size(), handles.size());
++            return;
++        }
++        data.writeUint32(n);
++        for (auto ts : timestamps) {
++            data.writeInt64(ts);
++        }
++        for (auto& handle : handles) {
++            data.writeNativeHandle(handle);
++        }
++        remote()->transact(RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP_BATCH, data, &reply,
++                IBinder::FLAG_ONEWAY);
++
++        // The native handle is dupped in ICameraClient so we need to free it here.
++        for (auto& handle : handles) {
++            native_handle_close(handle);
++            native_handle_delete(handle);
++        }
++    }
++};
++
++IMPLEMENT_META_INTERFACE(CameraRecordingProxyListener, "android.hardware.ICameraRecordingProxyListener");
++
++// ----------------------------------------------------------------------
++
++status_t BnCameraRecordingProxyListener::onTransact(
++    uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
++{
++    switch(code) {
++        case DATA_CALLBACK_TIMESTAMP: {
++            ALOGV("DATA_CALLBACK_TIMESTAMP");
++            CHECK_INTERFACE(ICameraRecordingProxyListener, data, reply);
++            nsecs_t timestamp = data.readInt64();
++            int32_t msgType = data.readInt32();
++            sp<IMemory> imageData = interface_cast<IMemory>(data.readStrongBinder());
++            dataCallbackTimestamp(timestamp, msgType, imageData);
++            return NO_ERROR;
++        } break;
++        case RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP: {
++            ALOGV("RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP");
++            CHECK_INTERFACE(ICameraRecordingProxyListener, data, reply);
++            nsecs_t timestamp;
++            status_t res = data.readInt64(&timestamp);
++            if (res != OK) {
++                ALOGE("%s: Failed to read timestamp: %s (%d)", __FUNCTION__, strerror(-res), res);
++                return BAD_VALUE;
++            }
++
++            native_handle_t* handle = data.readNativeHandle();
++            if (handle == nullptr) {
++                ALOGE("%s: Received a null native handle", __FUNCTION__);
++                return BAD_VALUE;
++            }
++            // The native handle will be freed in
++            // BpCameraRecordingProxy::releaseRecordingFrameHandle.
++            recordingFrameHandleCallbackTimestamp(timestamp, handle);
++            return NO_ERROR;
++        } break;
++        case RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP_BATCH: {
++            ALOGV("RECORDING_FRAME_HANDLE_CALLBACK_TIMESTAMP_BATCH");
++            CHECK_INTERFACE(ICameraRecordingProxyListener, data, reply);
++            uint32_t n = 0;
++            status_t res = data.readUint32(&n);
++            if (res != OK) {
++                ALOGE("%s: Failed to read batch size: %s (%d)", __FUNCTION__, strerror(-res), res);
++                return BAD_VALUE;
++            }
++            std::vector<nsecs_t> timestamps;
++            std::vector<native_handle_t*> handles;
++            timestamps.reserve(n);
++            handles.reserve(n);
++            for (uint32_t i = 0; i < n; i++) {
++                nsecs_t t;
++                res = data.readInt64(&t);
++                if (res != OK) {
++                    ALOGE("%s: Failed to read timestamp[%d]: %s (%d)",
++                            __FUNCTION__, i, strerror(-res), res);
++                    return BAD_VALUE;
++                }
++                timestamps.push_back(t);
++            }
++            for (uint32_t i = 0; i < n; i++) {
++                native_handle_t* handle = data.readNativeHandle();
++                if (handle == nullptr) {
++                    ALOGE("%s: Received a null native handle at handles[%d]",
++                            __FUNCTION__, i);
++                    return BAD_VALUE;
++                }
++                handles.push_back(handle);
++            }
++            // The native handle will be freed in
++            // BpCameraRecordingProxy::releaseRecordingFrameHandleBatch.
++            recordingFrameHandleCallbackTimestampBatch(timestamps, handles);
++            return NO_ERROR;
++        } break;
++        default:
++            return BBinder::onTransact(code, data, reply, flags);
++    }
++}
++
++// ----------------------------------------------------------------------------
++
++}; // namespace android
++
+diff --git a/camera/include/camera/Camera.h b/camera/include/camera/Camera.h
+index 6655f82..d4eba40 100644
+--- a/camera/include/camera/Camera.h
++++ b/camera/include/camera/Camera.h
+@@ -24,6 +24,7 @@
+ #include <gui/IGraphicBufferProducer.h>
+ #include <system/camera.h>
+ #include <camera/ICameraRecordingProxy.h>
++#include <camera/ICameraRecordingProxyListener.h>
+ #include <camera/android/hardware/ICamera.h>
+ #include <camera/android/hardware/ICameraClient.h>
+ #include <camera/CameraBase.h>
+@@ -161,6 +162,7 @@ public:
+                     const sp<IGraphicBufferProducer>& callbackProducer);
+ 
+             sp<ICameraRecordingProxy> getRecordingProxy();
++            void        setRecordingProxyListener(const sp<ICameraRecordingProxyListener>& listener);
+ 
+             status_t     setAudioRestriction(int32_t mode);
+             int32_t      getGlobalAudioRestriction();
+@@ -182,13 +184,19 @@ public:
+         explicit RecordingProxy(const sp<Camera>& camera);
+ 
+         // ICameraRecordingProxy interface
+-        virtual status_t startRecording();
++        virtual status_t startRecording(const sp<ICameraRecordingProxyListener>& listener);
+         virtual void stopRecording();
++        virtual void releaseRecordingFrame(const sp<IMemory>& mem);
++        virtual void releaseRecordingFrameHandle(native_handle_t* handle);
++        virtual void releaseRecordingFrameHandleBatch(
++                const std::vector<native_handle_t*>& handles);
+ 
+     private:
+         sp<Camera>         mCamera;
+     };
+ 
++    sp<ICameraRecordingProxyListener>  mRecordingProxyListener;
++
+ protected:
+     explicit            Camera(int cameraId);
+                         Camera(const Camera&);
+diff --git a/camera/include/camera/ICameraRecordingProxy.h b/camera/include/camera/ICameraRecordingProxy.h
+index 4306dc1..02af2f3 100644
+--- a/camera/include/camera/ICameraRecordingProxy.h
++++ b/camera/include/camera/ICameraRecordingProxy.h
+@@ -24,11 +24,13 @@
+ 
+ namespace android {
+ 
++class ICameraRecordingProxyListener;
++class IMemory;
+ class Parcel;
+ 
+ /*
+- * The purpose of ICameraRecordingProxy is to
+- * allow applications to use the camera during recording with the old camera API.
++ * The purpose of ICameraRecordingProxy and ICameraRecordingProxyListener is to
++ * allow applications using the camera during recording.
+  *
+  * Camera service allows only one client at a time. Since camcorder application
+  * needs to own the camera to do things like zoom, the media recorder cannot
+@@ -40,29 +42,35 @@ class Parcel;
+  * ICameraRecordingProxy
+  *   startRecording()
+  *   stopRecording()
++ *   releaseRecordingFrame()
+  *
++ * ICameraRecordingProxyListener
++ *   dataCallbackTimestamp()
++
+  * The camcorder app opens the camera and starts the preview. The app passes
+  * ICamera and ICameraRecordingProxy to the media recorder by
+  * MediaRecorder::setCamera(). The recorder uses ICamera to setup the camera in
+  * MediaRecorder::start(). After setup, the recorder disconnects from camera
+- * service. The recorder calls ICameraRecordingProxy::startRecording() and The
+- * app owns the camera and can do things like zoom. The media recorder receives
+- * the video frames via a buffer queue.  The recorder calls
+- * ICameraRecordingProxy::stopRecording() to stop the recording.
++ * service. The recorder calls ICameraRecordingProxy::startRecording() and
++ * passes a ICameraRecordingProxyListener to the app. The app connects back to
++ * camera service and starts the recording. The app owns the camera and can do
++ * things like zoom. The media recorder receives the video frames from the
++ * listener and releases them by ICameraRecordingProxy::releaseRecordingFrame.
++ * The recorder calls ICameraRecordingProxy::stopRecording() to stop the
++ * recording.
+  *
+  * The call sequences are as follows:
+  * 1. The app: Camera.unlock().
+  * 2. The app: MediaRecorder.setCamera().
+  * 3. Start recording
+  *    (1) The app: MediaRecorder.start().
+- *    (2) The recorder: ICamera.setVideoTarget(buffer queue).
+- *    (3) The recorder: ICamera.unlock() and ICamera.disconnect().
+- *    (4) The recorder: ICameraRecordingProxy.startRecording().
+- *    (5) The app: ICamera.reconnect().
+- *    (6) The app: ICamera.startRecording().
++ *    (2) The recorder: ICamera.unlock() and ICamera.disconnect().
++ *    (3) The recorder: ICameraRecordingProxy.startRecording().
++ *    (4) The app: ICamera.reconnect().
++ *    (5) The app: ICamera.startRecording().
+  * 4. During recording
+- *    (1) The recorder: receive frames via a buffer queue
+- *    (2) The recorder: release frames via a buffer queue
++ *    (1) The recorder: receive frames from ICameraRecordingProxyListener.dataCallbackTimestamp()
++ *    (2) The recorder: release frames by ICameraRecordingProxy.releaseRecordingFrame().
+  * 5. Stop recording
+  *    (1) The app: MediaRecorder.stop()
+  *    (2) The recorder: ICameraRecordingProxy.stopRecording().
+@@ -74,8 +82,12 @@ class ICameraRecordingProxy: public IInterface
+ public:
+     DECLARE_META_INTERFACE(CameraRecordingProxy);
+ 
+-    virtual status_t        startRecording() = 0;
++    virtual status_t        startRecording(const sp<ICameraRecordingProxyListener>& listener) = 0;
+     virtual void            stopRecording() = 0;
++    virtual void            releaseRecordingFrame(const sp<IMemory>& mem) = 0;
++    virtual void            releaseRecordingFrameHandle(native_handle_t *handle) = 0;
++    virtual void            releaseRecordingFrameHandleBatch(
++                                    const std::vector<native_handle_t*>& handles) = 0;
+ };
+ 
+ // ----------------------------------------------------------------------------
+diff --git a/camera/include/camera/ICameraRecordingProxyListener.h b/camera/include/camera/ICameraRecordingProxyListener.h
+new file mode 100644
+index 0000000..da03c56
+--- /dev/null
++++ b/camera/include/camera/ICameraRecordingProxyListener.h
+@@ -0,0 +1,61 @@
++/*
++ * Copyright (C) 2011 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_HARDWARE_ICAMERA_RECORDING_PROXY_LISTENER_H
++#define ANDROID_HARDWARE_ICAMERA_RECORDING_PROXY_LISTENER_H
++
++#include <vector>
++#include <binder/IInterface.h>
++#include <cutils/native_handle.h>
++#include <stdint.h>
++#include <utils/RefBase.h>
++#include <utils/Timers.h>
++
++namespace android {
++
++class Parcel;
++class IMemory;
++
++class ICameraRecordingProxyListener: public IInterface
++{
++public:
++    DECLARE_META_INTERFACE(CameraRecordingProxyListener);
++
++    virtual void dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType,
++                                       const sp<IMemory>& data) = 0;
++
++    virtual void recordingFrameHandleCallbackTimestamp(nsecs_t timestamp,
++                                                       native_handle_t* handle) = 0;
++
++    virtual void recordingFrameHandleCallbackTimestampBatch(
++            const std::vector<nsecs_t>& timestamps,
++            const std::vector<native_handle_t*>& handles) = 0;
++};
++
++// ----------------------------------------------------------------------------
++
++class BnCameraRecordingProxyListener: public BnInterface<ICameraRecordingProxyListener>
++{
++public:
++    virtual status_t    onTransact( uint32_t code,
++                                    const Parcel& data,
++                                    Parcel* reply,
++                                    uint32_t flags = 0);
++};
++
++}; // namespace android
++
++#endif

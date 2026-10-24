@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 09:02:42 +0300
+Subject: [PATCH] kernel: list vendor modules under vendor/ when there is no
+ vendor partition
+
+Without a vendor image the modules are installed to system/vendor/lib/modules
+but were added to the system image file list as lib/modules/*, so build_image
+failed to find them (adsprpc.ko).
+---
+ build/tasks/kernel.mk | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/build/tasks/kernel.mk b/build/tasks/kernel.mk
+index 3f8cbe9..b1ea64e 100644
+--- a/build/tasks/kernel.mk
++++ b/build/tasks/kernel.mk
+@@ -384,13 +384,13 @@ define build-image-kernel-modules-lineage
+         fi; \
+     done
+     if [ ! -z "$(7)" ]; then \
+-        echo lib/modules$(6)/modules.alias >> "$(7)"; \
+-        echo lib/modules$(6)/modules.dep >> "$(7)"; \
+-        if [ ! -z "$(5)" ]; then echo lib/modules$(6)/modules.load >> "$(7)"; fi; \
+-        echo lib/modules$(6)/modules.softdep >> "$(7)"; \
++        echo $(8)lib/modules$(6)/modules.alias >> "$(7)"; \
++        echo $(8)lib/modules$(6)/modules.dep >> "$(7)"; \
++        if [ ! -z "$(5)" ]; then echo $(8)lib/modules$(6)/modules.load >> "$(7)"; fi; \
++        echo $(8)lib/modules$(6)/modules.softdep >> "$(7)"; \
+         for MODULE in $(1); do \
+             BASENAME=$$(basename $$MODULE); \
+-            echo lib/modules$(6)/"$$BASENAME" >> "$(7)"; \
++            echo $(8)lib/modules$(6)/"$$BASENAME" >> "$(7)"; \
+         done; \
+         sort -u "$(7)" -o "$(7)"; \
+     fi;
+@@ -428,6 +428,8 @@ ifneq ($(BUILDING_VENDOR_IMAGE),)
+ KERNEL_MODULES_PARTITION_FILE_LIST := $(vendorimage_intermediates)/file_list.txt
+ else # No vendor partition
+ KERNEL_MODULES_PARTITION_FILE_LIST := $(systemimage_intermediates)/file_list.txt
++# Modules land in system/vendor/lib/modules, so list them relative to the system root.
++KERNEL_MODULES_PARTITION_FILE_PREFIX := vendor/
+ endif # BUILDING_VENDOR_IMAGE
+ $(INSTALLED_VENDORIMAGE_TARGET): $(TARGET_PREBUILT_INT_KERNEL)
+ endif
+@@ -528,9 +530,9 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
+ 					module_name=$$(basename $$n); \
+ 					if [[ ! "$(SYSTEM_KERNEL_MODULES)" =~ "$$module_name" ]]; then echo $$n; fi; \
+ 				done); \
+-				($(call build-image-kernel-modules-lineage,$$filtered_modules,$(KERNEL_MODULES_OUT),$(KERNEL_MODULE_MOUNTPOINT)/,$(KERNEL_DEPMOD_STAGING_DIR),$(BOARD_VENDOR_KERNEL_MODULES_LOAD),,$(KERNEL_MODULES_PARTITION_FILE_LIST))) || exit "$$?"; \
++				($(call build-image-kernel-modules-lineage,$$filtered_modules,$(KERNEL_MODULES_OUT),$(KERNEL_MODULE_MOUNTPOINT)/,$(KERNEL_DEPMOD_STAGING_DIR),$(BOARD_VENDOR_KERNEL_MODULES_LOAD),,$(KERNEL_MODULES_PARTITION_FILE_LIST),$(KERNEL_MODULES_PARTITION_FILE_PREFIX))) || exit "$$?"; \
+ 				,\
+-				($(call build-image-kernel-modules-lineage,$$all_modules,$(KERNEL_MODULES_OUT),$(KERNEL_MODULE_MOUNTPOINT)/,$(KERNEL_DEPMOD_STAGING_DIR),$(BOARD_VENDOR_KERNEL_MODULES_LOAD),,$(KERNEL_MODULES_PARTITION_FILE_LIST))) || exit "$$?"; \
++				($(call build-image-kernel-modules-lineage,$$all_modules,$(KERNEL_MODULES_OUT),$(KERNEL_MODULE_MOUNTPOINT)/,$(KERNEL_DEPMOD_STAGING_DIR),$(BOARD_VENDOR_KERNEL_MODULES_LOAD),,$(KERNEL_MODULES_PARTITION_FILE_LIST),$(KERNEL_MODULES_PARTITION_FILE_PREFIX))) || exit "$$?"; \
+ 			) \
+ 			$(if $(BOOT_KERNEL_MODULES),\
+ 				vendor_boot_modules=$$(for m in $(BOOT_KERNEL_MODULES); do \

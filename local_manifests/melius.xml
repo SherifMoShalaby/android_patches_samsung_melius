@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="melius" fetch="https://github.com/SherifMoShalaby" />
+  <remote name="sileshn" fetch="https://github.com/sileshn" />
+
+  <!-- Device and kernel: forks of sileshn's lineage-18.1 trees, branch lineage-21, pinned to the b11 build -->
+  <project name="android_device_samsung_meliusltexx" path="device/samsung/meliusltexx" remote="melius" revision="8477394e4be0221f6e7a28257b4d5089d8d3ae5f" upstream="lineage-21" />
+  <project name="android_device_samsung_melius-common" path="device/samsung/melius-common" remote="melius" revision="c56d33373187cb8b7a80fe5f9d2c45df59ddf754" upstream="lineage-21" />
+  <project name="android_device_samsung_msm8930-common" path="device/samsung/msm8930-common" remote="melius" revision="0b45ae8301e0fc3ce6b1e32ec1e6c9f42211c9c4" upstream="lineage-21" />
+  <project name="android_kernel_samsung_msm8930-common" path="kernel/samsung/msm8930-common" remote="melius" revision="3c8a2b4c943b51680f6a469634f4ba0377ce97d8" upstream="lineage-21" />
+
+  <!-- Proprietary blobs: sileshn's repo, unmodified -->
+  <project name="proprietary_vendor_samsung" path="vendor/samsung" remote="sileshn" revision="cc233fcd5b64b977caa5114aea4ec99d6708dd7e" upstream="lineage-18.1" />
+
+  <project name="LineageOS/android_device_samsung_qcom-common" path="device/samsung/qcom-common" remote="github" revision="3f56559a5436fd7be36fc6b7010ed3506ebe6e08" upstream="lineage-21" />
+  <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="48d217b79df26e3cbdbcb2195a61586e2ee9b96d" upstream="lineage-21" />
+
+  <!-- Wi-Fi comes from hardware/qcom-caf/wlan (make). hardware/qcom/wlan defines a cc_defaults
+       named libwifi-hal-qcom that shadows the soong prebuilt wrapper for it. -->
+  <remove-project name="LineageOS/android_hardware_qcom_wlan" />
+  <remove-project name="platform/prebuilts/qemu-kernel" />
+</manifest>

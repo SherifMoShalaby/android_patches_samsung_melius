@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Tue, 13 Oct 2026 23:51:46 +0300
+Subject: [PATCH] UserContentObserver: match
+ IUserSwitchObserver.onBeforeUserSwitching(int)
+
+LineageOS-UL frameworks/base still has the one-argument form; the two-argument
+override does not compile against it. The callback body is empty either way.
+
+Change-Id: Ib96dd991abf2b6b11eb538e5e6887457d1cb7b27
+---
+ .../platform/internal/common/UserContentObserver.java          | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java b/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java
+index 8b79d91..a2c7912 100644
+--- a/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java
++++ b/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java
+@@ -34,8 +34,7 @@ public abstract class UserContentObserver extends ContentObserver {
+ 
+     private IUserSwitchObserver mUserSwitchObserver = new IUserSwitchObserver.Stub() {
+         @Override
+-        public void onBeforeUserSwitching(int newUserId, IRemoteCallback reply)
+-                throws RemoteException {
++        public void onBeforeUserSwitching(int newUserId) throws RemoteException {
+         }
+         @Override
+         public void onUserSwitching(int newUserId, IRemoteCallback reply) {

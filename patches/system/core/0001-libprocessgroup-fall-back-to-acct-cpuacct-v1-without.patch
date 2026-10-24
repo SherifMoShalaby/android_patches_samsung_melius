@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Tue, 13 Oct 2026 22:08:39 +0300
+Subject: [PATCH] libprocessgroup: fall back to /acct (cpuacct v1) without
+ cgroup v2
+
+Kernel 3.4 has no cgroup v2, so the uid_/pid_ process groups had nowhere to
+live and process-group kills silently missed children. Use the Android 11
+layout under the cpuacct hierarchy at /acct when v2 is not mounted.
+(Port of lineage-20.0-mega c9ea772.)
+---
+ libprocessgroup/processgroup.cpp | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/libprocessgroup/processgroup.cpp b/libprocessgroup/processgroup.cpp
+index 94d9502..c28d28f 100644
+--- a/libprocessgroup/processgroup.cpp
++++ b/libprocessgroup/processgroup.cpp
+@@ -78,6 +78,16 @@ bool CgroupGetControllerPath(const std::string& cgroup_name, std::string* path)
+     return true;
+ }
+ 
++// Legacy kernels (< 4.5) have no cgroup v2. Fall back to the Android 11 layout,
++// uid_<uid>/pid_<pid> under the cpuacct (v1) hierarchy at /acct.
++static bool GetProcessGroupRootPath(std::string* path) {
++    if (CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, path) &&
++        access((*path + "/cgroup.procs").c_str(), F_OK) == 0) {
++        return true;
++    }
++    return CgroupGetControllerPath("cpuacct", path);
++}
++
+ static std::string ConvertUidToPath(const char* cgroup, uid_t uid) {
+     return StringPrintf("%s/uid_%u", cgroup, uid);
+ }
+@@ -91,7 +101,7 @@ static bool CgroupKillAvailable() {
+     static bool cgroup_kill_available = false;
+     std::call_once(f, []() {
+         std::string cg_kill;
+-        CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &cg_kill);
++        GetProcessGroupRootPath(&cg_kill);
+         // cgroup.kill is not on the root cgroup, so check a non-root cgroup that should always
+         // exist
+         cg_kill = ConvertUidToPath(cg_kill.c_str(), AID_ROOT) + '/' + PROCESSGROUP_CGROUP_KILL_FILE;
+@@ -286,7 +296,7 @@ void removeAllEmptyProcessGroups() {
+     std::vector<std::string> cgroups;
+     std::string path, memcg_apps_path;
+ 
+-    if (CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &path)) {
++    if (GetProcessGroupRootPath(&path)) {
+         cgroups.push_back(path);
+     }
+     if (CgroupGetMemcgAppsPath(&memcg_apps_path) && memcg_apps_path != path) {
+@@ -376,7 +386,7 @@ bool sendSignalToProcessGroup(uid_t uid, pid_t initialPid, int signal) {
+ 
+     if (CgroupsAvailable()) {
+         std::string hierarchy_root_path, cgroup_v2_path;
+-        CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &hierarchy_root_path);
++        GetProcessGroupRootPath(&hierarchy_root_path);
+         cgroup_v2_path = ConvertUidPidToPath(hierarchy_root_path.c_str(), uid, initialPid);
+ 
+         if (signal == SIGKILL && CgroupKillAvailable()) {
+@@ -539,7 +549,7 @@ static int KillProcessGroup(
+     if (!CgroupsAvailable() || !signal_ret) return signal_ret ? 0 : -1;
+ 
+     std::string hierarchy_root_path;
+-    CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &hierarchy_root_path);
++    GetProcessGroupRootPath(&hierarchy_root_path);
+ 
+     const std::string cgroup_v2_path =
+             ConvertUidPidToPath(hierarchy_root_path.c_str(), uid, initialPid);
+@@ -709,7 +719,7 @@ int createProcessGroup(uid_t uid, pid_t initialPid, bool memControl) {
+     }
+ 
+     std::string cgroup;
+-    CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &cgroup);
++    GetProcessGroupRootPath(&cgroup);
+     return createProcessGroupInternal(uid, initialPid, cgroup, true);
+ }
+ 

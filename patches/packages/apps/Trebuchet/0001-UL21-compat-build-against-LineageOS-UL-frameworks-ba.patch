@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 00:39:03 +0300
+Subject: [PATCH] UL21 compat: build against LineageOS-UL frameworks/base
+ (2025-04-04)
+
+Drop the app half of 2025-26 security changes whose framework API UL never
+merged. Revert when frameworks/base
+gets those backports.
+
+Change-Id: Id1b326c8134f235285188fdb7e555573fb121202
+---
+ .../quickstep/QuickstepProcessInitializer.java        | 11 -----------
+ .../src/com/android/quickstep/SystemUiProxy.java      |  9 +--------
+ 2 files changed, 1 insertion(+), 19 deletions(-)
+
+diff --git a/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java b/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
+index 61f6be2..9570297 100644
+--- a/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
++++ b/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
+@@ -73,18 +73,7 @@ public class QuickstepProcessInitializer extends MainProcessInitializer {
+                     call.descriptor + " called on mainthread under " + call.activeTrace));
+         }
+ 
+-        setupImageDecoder(context);
+     }
+ 
+-    private void setupImageDecoder(Context context) {
+-        // Limit the max memory usage.
+-        int maxMemoryMb = context.getResources().getInteger(R.integer.max_launcher_memory_mb);
+-        long maxMemoryBytes = maxMemoryMb * 1024L * 1024L;
+-        // Get the allowed mime types from the resources.
+-        Set<String> allowedMimeTypes = Set.of(context.getResources().getStringArray(
+-                R.array.allowed_image_mime_types));
+-        ImageDecoder.setDefaultProcessListener(
+-                new LauncherProcessImageListener(maxMemoryBytes, allowedMimeTypes));
+-    }
+ 
+ }
+diff --git a/quickstep/src/com/android/quickstep/SystemUiProxy.java b/quickstep/src/com/android/quickstep/SystemUiProxy.java
+index b5454cb..e19704a 100644
+--- a/quickstep/src/com/android/quickstep/SystemUiProxy.java
++++ b/quickstep/src/com/android/quickstep/SystemUiProxy.java
+@@ -210,15 +210,8 @@ public class SystemUiProxy implements ISystemUiProxy, NavHandle {
+         }
+     }
+ 
+-    @Override
++    // ponytail: UL's ISystemUiProxy has no onKeyEvent(); keep the launcher-side entry point as a no-op.
+     public void onKeyEvent(int keycode) {
+-        if (mSystemUiProxy != null) {
+-            try {
+-                mSystemUiProxy.onKeyEvent(keycode);
+-            } catch (RemoteException e) {
+-                Log.w(TAG, "Failed call onKeyEvent", e);
+-            }
+-        }
+     }
+ 
+     @Override

@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 15:21:31 +0300
+Subject: [PATCH 2/2] gd: hal: give the HIDL HAL lookup 5s before aborting
+
+On msm8930, hwservicemanager spends ~1s trying to lazy-start the absent
+IBluetoothHci 1.1 before returning, so the 500ms watchdog killed
+com.android.bluetooth even though the 1.0 HAL was registered.
+---
+ system/gd/hal/hci_hal_android_hidl.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/system/gd/hal/hci_hal_android_hidl.cc b/system/gd/hal/hci_hal_android_hidl.cc
+index 84e72d0..7b78bc3 100644
+--- a/system/gd/hal/hci_hal_android_hidl.cc
++++ b/system/gd/hal/hci_hal_android_hidl.cc
+@@ -434,7 +434,7 @@ class HciHalHidl : public HciHal {
+           }
+           LOG_ALWAYS_FATAL("Unable to get a Bluetooth service after 500ms, start the HAL before starting Bluetooth");
+         }),
+-        std::chrono::milliseconds(500));
++        std::chrono::milliseconds(5000));  // slow devices: hwservicemanager alone takes ~1s to report a missing 1.1 HAL
+ 
+     bt_hci_1_1_ = IBluetoothHci_1_1::tryGetService();  // don't block on a 1.1 HAL that does not exist
+ 

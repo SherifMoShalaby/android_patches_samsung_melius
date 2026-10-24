@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 17:40:44 +0300
+Subject: [PATCH 4/5] libcameraservice: forward HALv1 video frames as native
+ handles
+
+When the device delivers a recording frame as a handle, mark the metadata
+NativeHandleSource so CameraClient sends the handle over binder. Legacy HALs
+report kMetadataBufferTypeCameraSource, which made CameraClient send the raw
+memory instead, and mediaserver then dereferenced a cameraserver pointer.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../camera/libcameraservice/device1/CameraHardwareInterface.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp b/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp
+index 0039093..bc4a90b 100644
+--- a/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp
++++ b/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp
+@@ -172,6 +172,7 @@ hardware::Return<void> CameraHardwareInterface::handleCallbackTimestamp(
+     //       issue (e.g. by copying).
+     VideoNativeHandleMetadata* md = (VideoNativeHandleMetadata*)
+             heapMem->mBuffers[bufferIndex]->unsecurePointer();
++    md->eType = kMetadataBufferTypeNativeHandleSource;
+     md->pHandle = const_cast<native_handle_t*>(frameData.getNativeHandle());
+     sDataCbTimestamp(timestamp, (int32_t) msgType, mem, bufferIndex, this);
+     return hardware::Void();
+@@ -203,6 +204,7 @@ hardware::Return<void> CameraHardwareInterface::handleCallbackTimestampBatch(
+             //       issue (e.g. by copying).
+             VideoNativeHandleMetadata* md = (VideoNativeHandleMetadata*)
+                     mem->mBuffers[hidl_msg.bufferIndex]->unsecurePointer();
++            md->eType = kMetadataBufferTypeNativeHandleSource;
+             md->pHandle = const_cast<native_handle_t*>(hidl_msg.frameData.getNativeHandle());
+ 
+             msgs.push_back({hidl_msg.timestamp, mem->mBuffers[hidl_msg.bufferIndex]});

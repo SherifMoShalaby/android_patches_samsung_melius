@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 15:31:16 +0300
+Subject: [PATCH] libhidl: don't sleep 1s on every getService without VINTF
+ enforcement
+
+Legacy devices build with PRODUCT_ENFORCE_VINTF_MANIFEST off. getService then
+slept 1s on every lookup, even for registered HALs: boot took ~5 min on
+msm8930, Bluetooth hit its 500ms HAL watchdog and com.android.phone ANR-looped
+while probing radio HAL versions. Only log undeclared lookups.
+---
+ transport/ServiceManagement.cpp | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/transport/ServiceManagement.cpp b/transport/ServiceManagement.cpp
+index 8867f53..7875e1f 100644
+--- a/transport/ServiceManagement.cpp
++++ b/transport/ServiceManagement.cpp
+@@ -964,14 +964,11 @@ sp<::android::hidl::base::V1_0::IBase> getRawServiceInternal(const std::string&
+     const bool allowLegacy = !kEnforceVintfManifest || (trebleTestingOverride && isDebuggable());
+     const bool vintfLegacy = (transport == Transport::EMPTY) && allowLegacy;
+ 
+-    if (!kEnforceVintfManifest) {
+-        ALOGE("getService: Potential race detected. The VINTF manifest is not being enforced. If "
+-              "a HAL server has a delay in starting and it is not in the manifest, it will not be "
+-              "retrieved. Please make sure all HALs on this device are in the VINTF manifest and "
+-              "enable PRODUCT_ENFORCE_VINTF_MANIFEST on this device (this is also enabled by "
+-              "PRODUCT_FULL_TREBLE). PRODUCT_ENFORCE_VINTF_MANIFEST will ensure that no race "
+-              "condition is possible here.");
+-        sleep(1);
++    // Legacy (non-enforced VINTF) devices: the stock code slept 1s on *every* lookup, which on
++    // msm8930 stretched boot to minutes and made Bluetooth/telephony time out. Only note the
++    // undeclared case and carry on.
++    if (!kEnforceVintfManifest && transport == Transport::EMPTY) {
++        ALOGW("getService: %s/%s is not in the VINTF manifest", descriptor.c_str(), instance.c_str());
+     }
+ 
+     for (int tries = 0; !getStub && (vintfHwbinder || vintfLegacy); tries++) {

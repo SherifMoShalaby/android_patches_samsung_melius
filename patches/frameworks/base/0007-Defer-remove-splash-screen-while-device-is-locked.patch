@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wilsonshih <wilsonshih@google.com>
+Date: Tue, 31 Dec 2024 08:25:26 +0000
+Subject: [PATCH 7/9] Defer remove splash screen while device is locked
+
+...and activity does not request showWhenLocked.
+The splash screen won't contains secure information, so it's safe to
+declared as showWhenLocked. But before remove starting window, if the
+activity does not request showWhenLocked and device is locked, try to
+trigger unoccluding animation, and keep app window hide until transition
+animation finish.
+
+Bug: 378088391
+Bug: 383131643
+Test: run simulate app repeatly, verify the app content won't be visible
+during transition animation.
+(cherry picked from https://googleplex-android-review.googlesource.com/q/commit:4d90cac9c80afe090cd231aae8cf4f844d95f8f3)
+Merged-In: Ia2ddece125521eefb15d67e22ea863dfae6af112
+Change-Id: Ia2ddece125521eefb15d67e22ea863dfae6af112
+
+(cherry picked from commit cd88f5c9b579aacd4cda45c5540e84964de175d2)
+---
+ .../com/android/server/wm/ActivityRecord.java | 25 +++++++++++++++++++
+ .../com/android/server/wm/StartingData.java   |  7 ++++++
+ .../com/android/server/wm/Transition.java     |  9 +++++++
+ .../com/android/server/wm/WindowState.java    | 15 +++++++++++
+ 4 files changed, 56 insertions(+)
+
+diff --git a/services/core/java/com/android/server/wm/ActivityRecord.java b/services/core/java/com/android/server/wm/ActivityRecord.java
+index 147f97fe1f07..6f937af09e29 100644
+--- a/services/core/java/com/android/server/wm/ActivityRecord.java
++++ b/services/core/java/com/android/server/wm/ActivityRecord.java
+@@ -236,7 +236,9 @@ import static com.android.server.wm.IdentifierProto.USER_ID;
+ import static com.android.server.wm.LetterboxConfiguration.DEFAULT_LETTERBOX_ASPECT_RATIO_FOR_MULTI_WINDOW;
+ import static com.android.server.wm.LetterboxConfiguration.MIN_FIXED_ORIENTATION_LETTERBOX_ASPECT_RATIO;
+ import static com.android.server.wm.StartingData.AFTER_TRANSACTION_COPY_TO_CLIENT;
++import static com.android.server.wm.StartingData.AFTER_TRANSACTION_IDLE;
+ import static com.android.server.wm.StartingData.AFTER_TRANSACTION_REMOVE_DIRECTLY;
++import static com.android.server.wm.StartingData.AFTER_TRANSITION_FINISH;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_APP_TRANSITION;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_PREDICT_BACK;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_RECENTS;
+@@ -2921,9 +2923,28 @@ final class ActivityRecord extends WindowToken implements WindowManagerService.A
+         attachStartingSurfaceToAssociatedTask();
+     }
+ 
++    /**
++     * If the device is locked and the app does not request showWhenLocked,
++     * defer removing the starting window until the transition is complete.
++     * This prevents briefly appearing the app context and causing secure concern.
++     */
++    void deferStartingWindowRemovalForKeyguardUnoccluding() {
++        if (mStartingData != null
++                && mStartingData.mRemoveAfterTransaction != AFTER_TRANSITION_FINISH
++                && isKeyguardLocked() && !canShowWhenLockedInner(this) && !isVisibleRequested()
++                && mTransitionController.inTransition(this)) {
++            mStartingData.mRemoveAfterTransaction = AFTER_TRANSITION_FINISH;
++        }
++    }
++
+     void removeStartingWindow() {
+         boolean prevEligibleForLetterboxEducation = isEligibleForLetterboxEducation();
+ 
++        if (mStartingData != null
++                && mStartingData.mRemoveAfterTransaction == AFTER_TRANSITION_FINISH) {
++            return;
++        }
++
+         if (transferSplashScreenIfNeeded()) {
+             return;
+         }
+@@ -4641,6 +4662,10 @@ final class ActivityRecord extends WindowToken implements WindowManagerService.A
+                 tStartingWindow.mToken = this;
+                 tStartingWindow.mActivityRecord = this;
+ 
++                if (mStartingData.mRemoveAfterTransaction == AFTER_TRANSITION_FINISH) {
++                    mStartingData.mRemoveAfterTransaction = AFTER_TRANSACTION_IDLE;
++                }
++
+                 ProtoLog.v(WM_DEBUG_ADD_REMOVE,
+                         "Removing starting %s from %s", tStartingWindow, fromActivity);
+                 mTransitionController.collect(tStartingWindow);
+diff --git a/services/core/java/com/android/server/wm/StartingData.java b/services/core/java/com/android/server/wm/StartingData.java
+index 07ffa69e462a..f1eca44e54fb 100644
+--- a/services/core/java/com/android/server/wm/StartingData.java
++++ b/services/core/java/com/android/server/wm/StartingData.java
+@@ -31,11 +31,18 @@ public abstract class StartingData {
+     static final int AFTER_TRANSACTION_REMOVE_DIRECTLY = 1;
+     /** Do copy splash screen to client after transaction done. */
+     static final int AFTER_TRANSACTION_COPY_TO_CLIENT = 2;
++    /**
++     * Remove the starting window after transition finish.
++     * Used when activity doesn't request show when locked, so the app window should never show to
++     * the user if device is locked.
++     **/
++    static final int AFTER_TRANSITION_FINISH = 3;
+ 
+     @IntDef(prefix = { "AFTER_TRANSACTION" }, value = {
+             AFTER_TRANSACTION_IDLE,
+             AFTER_TRANSACTION_REMOVE_DIRECTLY,
+             AFTER_TRANSACTION_COPY_TO_CLIENT,
++            AFTER_TRANSITION_FINISH,
+     })
+     @interface AfterTransaction {}
+ 
+diff --git a/services/core/java/com/android/server/wm/Transition.java b/services/core/java/com/android/server/wm/Transition.java
+index 7edc3a2b9786..e30b210ab83f 100644
+--- a/services/core/java/com/android/server/wm/Transition.java
++++ b/services/core/java/com/android/server/wm/Transition.java
+@@ -67,6 +67,8 @@ import static com.android.server.wm.ActivityTaskManagerInternal.APP_TRANSITION_R
+ import static com.android.server.wm.ActivityTaskManagerInternal.APP_TRANSITION_SPLASH_SCREEN;
+ import static com.android.server.wm.ActivityTaskManagerInternal.APP_TRANSITION_WINDOWS_DRAWN;
+ import static com.android.server.wm.WindowState.BLAST_TIMEOUT_DURATION;
++import static com.android.server.wm.StartingData.AFTER_TRANSACTION_IDLE;
++import static com.android.server.wm.StartingData.AFTER_TRANSITION_FINISH;
+ 
+ import android.annotation.IntDef;
+ import android.annotation.NonNull;
+@@ -1261,6 +1263,13 @@ class Transition implements BLASTSyncEngine.TransactionReadyListener {
+                         enterAutoPip = true;
+                     }
+                 }
++
++                if (ar.mStartingData != null && ar.mStartingData.mRemoveAfterTransaction
++                        == AFTER_TRANSITION_FINISH
++                        && (!ar.isVisible() || !ar.mTransitionController.inTransition(ar))) {
++                    ar.mStartingData.mRemoveAfterTransaction = AFTER_TRANSACTION_IDLE;
++                    ar.removeStartingWindow();
++                }
+                 final ChangeInfo changeInfo = mChanges.get(ar);
+                 // Due to transient-hide, there may be some activities here which weren't in the
+                 // transition.
+diff --git a/services/core/java/com/android/server/wm/WindowState.java b/services/core/java/com/android/server/wm/WindowState.java
+index 852a145f8e9c..84c0225d3450 100644
+--- a/services/core/java/com/android/server/wm/WindowState.java
++++ b/services/core/java/com/android/server/wm/WindowState.java
+@@ -122,6 +122,7 @@ import static com.android.server.wm.IdentifierProto.USER_ID;
+ import static com.android.server.wm.MoveAnimationSpecProto.DURATION_MS;
+ import static com.android.server.wm.MoveAnimationSpecProto.FROM;
+ import static com.android.server.wm.MoveAnimationSpecProto.TO;
++import static com.android.server.wm.StartingData.AFTER_TRANSITION_FINISH;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_ALL;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_APP_TRANSITION;
+ import static com.android.server.wm.SurfaceAnimator.ANIMATION_TYPE_RECENTS;
+@@ -1874,6 +1875,13 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
+         }
+         final ActivityRecord atoken = mActivityRecord;
+         if (atoken != null) {
++            if (atoken.mStartingData != null && mAttrs.type != TYPE_APPLICATION_STARTING
++                    && atoken.mStartingData.mRemoveAfterTransaction
++                    == AFTER_TRANSITION_FINISH) {
++                // Preventing app window from visible during un-occluding animation playing due to
++                // alpha blending.
++                return false;
++            }
+             final boolean isVisible = isStartingWindowAssociatedToTask()
+                     ? mStartingData.mAssociatedTask.isVisible() : atoken.isVisible();
+             return ((!isParentWindowHidden() && isVisible)
+@@ -2862,7 +2870,14 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
+             final int mask = FLAG_SHOW_WHEN_LOCKED | FLAG_DISMISS_KEYGUARD
+                     | FLAG_ALLOW_LOCK_WHILE_SCREEN_ON;
+             WindowManager.LayoutParams sa = mActivityRecord.mStartingWindow.mAttrs;
++            final boolean wasShowWhenLocked = (sa.flags & FLAG_SHOW_WHEN_LOCKED) != 0;
++            final boolean removeShowWhenLocked = (mAttrs.flags & FLAG_SHOW_WHEN_LOCKED) == 0;
+             sa.flags = (sa.flags & ~mask) | (mAttrs.flags & mask);
++            if (wasShowWhenLocked && removeShowWhenLocked) {
++                // Trigger unoccluding animation if needed.
++                mActivityRecord.checkKeyguardFlagsChanged();
++                mActivityRecord.deferStartingWindowRemovalForKeyguardUnoccluding();
++            }
+         }
+     }
+ 

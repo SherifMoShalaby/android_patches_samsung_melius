@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sherif Shalaby <sherif2222222@gmail.com>
+Date: Wed, 14 Oct 2026 03:46:51 +0300
+Subject: [PATCH] soong: pass GOMEMLIMIT through to soong_build
+
+soong_build is started with env -i. On a 12 GB memory-capped build container
+its analysis heap grew past the cap and was OOM-killed; GOMEMLIMIT lets the Go
+GC trade CPU for a lower peak instead.
+
+Change-Id: I9625ba5cb0e0b9398fb68a8cff337f1283c6132e
+---
+ ui/build/soong.go | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+index 79584c6..a59dce5 100644
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -208,6 +208,11 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 
+ 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
+ 	invocationEnv := make(map[string]string)
++	// soong_build runs under env -i; let GOMEMLIMIT through so a memory-capped
++	// build container can make the Go GC work harder instead of being OOM-killed.
++	if v := os.Getenv("GOMEMLIMIT"); v != "" {
++		invocationEnv["GOMEMLIMIT"] = v
++	}
+ 	if pb.debugPort != "" {
+ 		//debug mode
+ 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,
