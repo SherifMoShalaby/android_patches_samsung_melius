@@ -2,6 +2,9 @@
 
 Unofficial. Not affiliated with or endorsed by the LineageOS project.
 
+Download and install: [XDA thread](https://xdaforums.com/t/rom-unofficial-14-lineageos-ul-21-0-for-the-galaxy-mega-6-3-gt-i9200-melius.4806510/) · [release b11](https://github.com/SherifMoShalaby/android_patches_samsung_melius/releases/tag/b11).
+How the port was done: [docs/blog.md](docs/blog.md).
+
 This repo holds what a LineageOS-UL 21.0 (Android 14) tree needs to build for the GT-I9200 (meliusltexx,
 msm8930):
 
